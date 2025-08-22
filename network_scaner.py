@@ -328,8 +328,10 @@ class NetworkScanner:
 
 def main():
     parser = argparse.ArgumentParser(description="Discover devices on the local network")
-    parser.add_argument("--threads", "-t", type=int, default=50, 
-                       help="Number of threads to use for scanning (default: 50)")
+    parser.add_argument("--threads", "-t", type=int, default=30, 
+                       help="Number of threads to use for scanning (default: 30)")
+    parser.add_argument("--quick", "-q", action="store_true",
+                       help="Quick scan with minimal port checking")
     parser.add_argument("--timeout", type=int, default=1,
                        help="Ping timeout in seconds (default: 1)")
     
@@ -337,12 +339,18 @@ def main():
     
     try:
         scanner = NetworkScanner()
+        
+        # Adjust settings for quick scan
+        if args.quick:
+            # Override port scanning for speed
+            scanner.get_open_ports = lambda ip, ports=None: []  # Skip port scanning
+        
         scanner.scan_network(max_threads=args.threads)
         scanner.display_results()
     except KeyboardInterrupt:
-        print("\n[red]Scan interrupted by user[/red]")
+        scanner.console.print("\n[red]Scan interrupted by user[/red]")
     except Exception as e:
-        print(f"[red]Error: {str(e)}[/red]")
+        scanner.console.print(f"[red]Error: {str(e)}[/red]")
 
 
 if __name__ == "__main__":

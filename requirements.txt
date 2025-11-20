@@ -5,7 +5,7 @@
 rich>=13.0.0
 
 # Network interfaces information
-netifaces>=0.11.0
+
 
 # System and process utilities
 psutil>=5.9.0

@@ -247,6 +247,54 @@ class NetworkScanner:
                 for future in as_completed(futures, timeout=60):  # 60 second total timeout
                     try:
                         ip = futures[future]
+        networks = self.get_local_networks()
+        if not networks:
+            self.console.print("[red]No local networks found![/red]")
+            return
+        
+        # Limit scan to reasonable subnet sizes to avoid hanging
+        total_hosts = 0
+        scan_networks = []
+        for net_info in networks:
+            network = net_info['network']
+            # Skip very large networks to prevent hanging
+            if network.num_addresses > 512:  # Skip networks larger than /23
+                self.console.print(f"[yellow]Skipping large network: {network} (too many hosts)[/yellow]")
+                continue
+            scan_networks.append(net_info)
+            total_hosts += len(list(network.hosts()))
+        
+        if total_hosts == 0:
+            self.console.print("[yellow]No suitable networks to scan found![/yellow]")
+            return
+            
+        self.console.print(f"[cyan]Scanning {total_hosts} hosts across {len(scan_networks)} networks...[/cyan]")
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=self.console
+        ) as progress:
+            task = progress.add_task("Scanning hosts...", total=total_hosts)
+            completed = 0
+            
+            with ThreadPoolExecutor(max_workers=max_threads) as executor:
+                futures = {}
+                
+                for network_info in scan_networks:
+                    network = network_info['network']
+                    interface_name = network_info['interface']
+                    
+                    self.console.print(f"[cyan]Scanning network: {network} on interface {interface_name}[/cyan]")
+                    
+                    for ip in network.hosts():
+                        future = executor.submit(self.scan_device, ip, interface_name)
+                        futures[future] = str(ip)
+                
+                # Process completed futures with timeout
+                for future in as_completed(futures, timeout=60):  # 60 second total timeout
+                    try:
+                        ip = futures[future]
                         result = future.result(timeout=5)  # 5 second per-future timeout
                         completed += 1
                         progress.update(task, advance=1)
@@ -287,6 +335,31 @@ class NetworkScanner:
         
         # Create table
         table = Table(title="🌐 Network Devices Discovered", show_header=True, header_style="bold magenta")
+        table.add_column("IP Address", style="cyan", no_wrap=True)
+            localhost_info = {
+                'ip': '127.0.0.1',
+                'hostname': socket.gethostname(),
+                'mac_address': 'N/A (Localhost)',
+                'vendor': 'N/A',
+                'interface': 'lo',
+                'open_ports': [],
+                'response_time': 0.1
+            }
+            self.devices.append(localhost_info)
+        except:
+            pass
+    
+    def display_results(self):
+        """Display results in a beautiful table"""
+        if not self.devices:
+            self.console.print("[red]No devices found on the network![/red]")
+            return
+        
+        # Sort devices by IP address
+        self.devices.sort(key=lambda x: ipaddress.IPv4Address(x['ip']))
+        
+        # Create table
+        table = Table(title="Network Devices Discovered", show_header=True, header_style="bold magenta")
         table.add_column("IP Address", style="cyan", no_wrap=True)
         table.add_column("Hostname", style="green")
         table.add_column("MAC Address", style="yellow")
